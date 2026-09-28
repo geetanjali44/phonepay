@@ -323,12 +323,9 @@ let pollTimer = null;
 async function startPayment(app){
 
   const amount =
-    Number(
-      document.getElementById("amount").value
-    );
+    Number(document.getElementById("amount").value);
 
   if(!amount || amount < 1){
-
     alert("Please enter valid amount");
     return;
   }
@@ -336,52 +333,34 @@ async function startPayment(app){
   const status =
     document.getElementById("statusText");
 
-  status.textContent =
-    "Preparing secure payment...";
+  status.textContent = "Opening payment app...";
 
   try{
 
-    const response =
-      await fetch(
-        API + "/api/payment/create",
-        {
-          method:"POST",
+    const response = await fetch(
+      API + "/api/payment/create",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          amount:amount,
+          app:app
+        })
+      }
+    );
 
-          headers:{
-            "Content-Type":"application/json"
-          },
-
-          body:JSON.stringify({
-            amount,
-            app
-          })
-        }
-      );
-
-
-    const data =
-      await response.json();
-
+    const data = await response.json();
 
     if(!response.ok){
-
       throw new Error(
         data.error || "Payment unavailable"
       );
     }
 
-
-    currentPaymentId =
-      data.paymentId;
-
-    currentDeviceToken =
-      data.deviceToken;
-
-
-    /*
-      Save session so returning
-      from PhonePe still works.
-    */
+    currentPaymentId = data.paymentId;
+    currentDeviceToken = data.deviceToken;
 
     sessionStorage.setItem(
       "cezoo_payment_id",
@@ -393,25 +372,13 @@ async function startPayment(app){
       currentDeviceToken
     );
 
-
-    status.textContent =
-      "Opening payment app...";
-
-
     /*
-      Start checking backend
+      IMPORTANT:
+      Don't show verifying popup here.
+      First open payment app.
     */
 
-    startStatusPolling();
-
-
-    /*
-      OPEN UPI APP
-    */
-
-    window.location.href =
-      data.paymentUrl;
-
+    window.location.href = data.paymentUrl;
 
   }
   catch(error){
@@ -419,8 +386,7 @@ async function startPayment(app){
     console.error(error);
 
     status.textContent =
-      error.message ||
-      "Unable to start payment";
+      error.message || "Unable to start payment";
   }
 }
 
@@ -668,50 +634,57 @@ function clearPaymentSession(){
 
 
 /* ===========================
-   RESTORE AFTER RETURN
+   RETURN FROM PAYMENT APP
 =========================== */
 
-function restorePayment(){
+let paymentAppOpened = false;
 
-  const id =
-    sessionStorage.getItem(
-      "cezoo_payment_id"
-    );
-
-  const token =
-    sessionStorage.getItem(
-      "cezoo_payment_token"
-    );
-
-
-  if(id && token){
-
-    currentPaymentId = id;
-    currentDeviceToken = token;
-
-    showPending();
-
-    startStatusPolling();
+window.addEventListener("blur", function () {
+  if (currentPaymentId && currentDeviceToken) {
+    paymentAppOpened = true;
   }
-}
+});
 
+document.addEventListener("visibilitychange", function () {
 
-window.addEventListener(
-  "pageshow",
-  restorePayment
-);
+  if (document.visibilityState === "hidden") {
 
-window.addEventListener(
-  "focus",
-  () => {
-
-    if(currentPaymentId){
-      checkPaymentStatus();
+    if (currentPaymentId && currentDeviceToken) {
+      paymentAppOpened = true;
     }
 
+    return;
   }
-);
 
+  if (
+    document.visibilityState === "visible" &&
+    paymentAppOpened &&
+    currentPaymentId &&
+    currentDeviceToken
+  ) {
+
+    showPending();
+    startStatusPolling();
+  }
+});
+
+
+/* Restore only an existing payment after page reload */
+
+window.addEventListener("pageshow", function () {
+
+  const id =
+    sessionStorage.getItem("cezoo_payment_id");
+
+  const token =
+    sessionStorage.getItem("cezoo_payment_token");
+
+  if (!id || !token) return;
+
+  currentPaymentId = id;
+  currentDeviceToken = token;
+
+});
 </script>
 
 </body>
