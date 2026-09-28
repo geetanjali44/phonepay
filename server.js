@@ -12,7 +12,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
+
+/* =========================================
+   ENVIRONMENT VARIABLES
+========================================= */
+
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -25,8 +32,18 @@ const PAYEE_NAME =
 const ADMIN_PASSWORD =
   process.env.ADMIN_PASSWORD;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("Supabase environment variables missing");
+
+/* =========================================
+   CHECK ENV
+========================================= */
+
+if (!SUPABASE_URL) {
+  console.error("SUPABASE_URL missing");
+  process.exit(1);
+}
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("SUPABASE_SERVICE_ROLE_KEY missing");
   process.exit(1);
 }
 
@@ -40,6 +57,11 @@ if (!ADMIN_PASSWORD) {
   process.exit(1);
 }
 
+
+/* =========================================
+   SUPABASE
+========================================= */
+
 const supabase = createClient(
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
@@ -52,196 +74,393 @@ const supabase = createClient(
 );
 
 
-/* ================================
-   HEALTH
-================================ */
+/* =========================================
+   HEALTH CHECK
+========================================= */
 
 app.get("/", (req, res) => {
+
   res.json({
     success: true,
     message: "CEZOO Payment Server Running"
   });
+
 });
 
 
-/* ================================
+/* =========================================
    CREATE PAYMENT
-================================ */
+========================================= */
 
-app.post("/api/payment/create", async (req, res) => {
+app.post(
+  "/api/payment/create",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const amount = Number(req.body.amount);
-    const appName = String(req.body.app || "").toLowerCase();
+      const amount =
+        Number(req.body.amount);
 
-    if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
-      return res.status(400).json({
-        error: "Invalid amount"
-      });
-    }
+      const appName =
+        String(
+          req.body.app || ""
+        ).toLowerCase();
 
-    if (!["phonepe", "paytm"].includes(appName)) {
-      return res.status(400).json({
-        error: "Invalid payment app"
-      });
-    }
 
-    const paymentId =
-      "CZ" +
-      Date.now() +
-      crypto.randomBytes(4).toString("hex").toUpperCase();
+      /* CHECK AMOUNT */
 
-    const deviceToken =
-      crypto.randomUUID();
+      if (
+        !Number.isFinite(amount) ||
+        amount < 1 ||
+        amount > 100000
+      ) {
 
-    const { error } = await supabase
-      .from("upi_payments")
-      .insert({
-        payment_id: paymentId,
-        device_token: deviceToken,
-        amount: amount.toFixed(2),
-        payment_app: appName,
-        status: "pending"
-      });
+        return res
+          .status(400)
+          .json({
+            error: "Invalid amount"
+          });
 
-    if (error) {
-      console.error(error);
+      }
 
-      return res.status(500).json({
-        error: "Unable to create payment"
-      });
-    }
 
-    const params =
-      "pa=" + encodeURIComponent(MERCHANT_UPI_ID) +
-      "&pn=" + encodeURIComponent(PAYEE_NAME) +
-      "&tr=" + encodeURIComponent(paymentId) +
-      "&tn=" + encodeURIComponent("CEZOO " + paymentId) +
-      "&am=" + encodeURIComponent(amount.toFixed(2)) +
-      "&cu=INR";
+      /* CHECK APP */
 
-    let paymentUrl;
+      if (
+        ![
+          "phonepe",
+          "paytm"
+        ].includes(appName)
+      ) {
 
-    if (appName === "phonepe") {
+        return res
+          .status(400)
+          .json({
+            error: "Invalid payment app"
+          });
 
-      paymentUrl =
-        "intent://pay?" +
-        params +
-        "#Intent;" +
-        "scheme=upi;" +
-        "package=com.phonepe.app;" +
-        "end";
+      }
 
-    } else {
+
+      /* PAYMENT ID */
+
+      const paymentId =
+        "CZ" +
+        Date.now() +
+        crypto
+          .randomBytes(4)
+          .toString("hex")
+          .toUpperCase();
+
+
+      /* DEVICE / PAYMENT SESSION TOKEN */
+
+      const deviceToken =
+        crypto.randomUUID();
+
+
+      /* SAVE TO DATABASE */
+
+      const {
+        error: insertError
+      } =
+        await supabase
+          .from("upi_payments")
+          .insert({
+
+            payment_id:
+              paymentId,
+
+            device_token:
+              deviceToken,
+
+            amount:
+              amount.toFixed(2),
+
+            payment_app:
+              appName,
+
+            status:
+              "pending"
+
+          });
+
+
+      if (insertError) {
+
+        console.error(
+          "Payment insert error:",
+          insertError
+        );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to create payment"
+          });
+
+      }
+
+
+      /* =================================
+         CREATE STANDARD UPI URI
+
+         UPI ID stays in Render ENV.
+         Browser receives payment URI only
+         after payment is created.
+      ================================= */
+
+
+      const params =
+        new URLSearchParams();
+
+
+      params.set(
+        "pa",
+        MERCHANT_UPI_ID
+      );
+
+      params.set(
+        "pn",
+        PAYEE_NAME
+      );
+
+      params.set(
+        "tr",
+        paymentId
+      );
+
+      params.set(
+        "tn",
+        "CEZOO Payment " +
+          paymentId
+      );
+
+      params.set(
+        "am",
+        amount.toFixed(2)
+      );
+
+      params.set(
+        "cu",
+        "INR"
+      );
+
 
       /*
-       Standard UPI URI.
-       Paytm or another installed UPI handler
-       may handle this depending on device.
+        IMPORTANT:
+
+        Do NOT force:
+        package=com.phonepe.app
+
+        Send standard UPI URI.
+
+        Android installed UPI handler
+        can open it.
       */
 
-      paymentUrl =
-        "upi://pay?" + params;
+      const paymentUrl =
+        "upi://pay?" +
+        params.toString();
+
+
+      return res.json({
+
+        success: true,
+
+        paymentId:
+          paymentId,
+
+        deviceToken:
+          deviceToken,
+
+        paymentUrl:
+          paymentUrl
+
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Create payment error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error: "Server error"
+        });
+
     }
 
-    return res.json({
-      success: true,
-      paymentId,
-      deviceToken,
-      paymentUrl
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: "Server error"
-    });
   }
-});
+);
 
 
-/* ================================
+/* =========================================
    CUSTOMER PAYMENT STATUS
-================================ */
+========================================= */
 
-app.get("/api/payment/status/:paymentId", async (req, res) => {
+app.get(
+  "/api/payment/status/:paymentId",
+  async (req, res) => {
 
-  try {
+    try {
 
-    const paymentId = req.params.paymentId;
-    const token = req.query.token;
+      const paymentId =
+        String(
+          req.params.paymentId || ""
+        );
 
-    if (!paymentId || !token) {
-      return res.status(400).json({
-        error: "Missing payment credentials"
+      const token =
+        String(
+          req.query.token || ""
+        );
+
+
+      if (
+        !paymentId ||
+        !token
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Missing payment credentials"
+          });
+
+      }
+
+
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from("upi_payments")
+          .select(
+            `
+            payment_id,
+            amount,
+            payment_app,
+            status,
+            created_at,
+            approved_at,
+            rejected_at
+            `
+          )
+          .eq(
+            "payment_id",
+            paymentId
+          )
+          .eq(
+            "device_token",
+            token
+          )
+          .maybeSingle();
+
+
+      if (error) {
+
+        console.error(
+          "Payment status error:",
+          error
+        );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to check payment"
+          });
+
+      }
+
+
+      if (!data) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Payment not found"
+          });
+
+      }
+
+
+      return res.json({
+
+        success: true,
+
+        payment:
+          data
+
       });
+
+
+    } catch (error) {
+
+      console.error(
+        "Status server error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error: "Server error"
+        });
+
     }
 
-    const { data, error } = await supabase
-      .from("upi_payments")
-      .select(
-        "payment_id,amount,payment_app,status,created_at,approved_at,rejected_at"
-      )
-      .eq("payment_id", paymentId)
-      .eq("device_token", token)
-      .maybeSingle();
-
-    if (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        error: "Unable to check payment"
-      });
-    }
-
-    if (!data) {
-      return res.status(404).json({
-        error: "Payment not found"
-      });
-    }
-
-    return res.json({
-      success: true,
-      payment: data
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: "Server error"
-    });
   }
-});
+);
 
 
-/* ================================
-   ADMIN AUTH HELPER
-================================ */
+/* =========================================
+   ADMIN AUTH
+========================================= */
 
-function checkAdmin(req, res, next) {
+function checkAdmin(
+  req,
+  res,
+  next
+) {
 
   const password =
-    req.headers["x-admin-password"];
+    req.headers[
+      "x-admin-password"
+    ];
 
-  if (!password || password !== ADMIN_PASSWORD) {
 
-    return res.status(401).json({
-      error: "Unauthorized"
-    });
+  if (
+    !password ||
+    password !==
+      ADMIN_PASSWORD
+  ) {
+
+    return res
+      .status(401)
+      .json({
+        error: "Unauthorized"
+      });
+
   }
 
+
   next();
+
 }
 
 
-/* ================================
-   ADMIN PAYMENTS
-================================ */
+/* =========================================
+   ADMIN GET PAYMENTS
+========================================= */
 
 app.get(
   "/api/admin/payments",
@@ -250,43 +469,71 @@ app.get(
 
     try {
 
-      const { data, error } = await supabase
-        .from("upi_payments")
-        .select("*")
-        .order("created_at", {
-          ascending: false
-        })
-        .limit(200);
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from("upi_payments")
+          .select("*")
+          .order(
+            "created_at",
+            {
+              ascending: false
+            }
+          )
+          .limit(200);
+
 
       if (error) {
 
-        console.error(error);
+        console.error(
+          "Admin load error:",
+          error
+        );
 
-        return res.status(500).json({
-          error: "Unable to load payments"
-        });
+        return res
+          .status(500)
+          .json({
+            error:
+              "Unable to load payments"
+          });
+
       }
 
+
       return res.json({
+
         success: true,
-        payments: data || []
+
+        payments:
+          data || []
+
       });
 
-    } catch (err) {
 
-      console.error(err);
+    } catch (error) {
 
-      return res.status(500).json({
-        error: "Server error"
-      });
+      console.error(
+        "Admin payments error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error: "Server error"
+        });
+
     }
+
   }
 );
 
 
-/* ================================
-   APPROVE
-================================ */
+/* =========================================
+   APPROVE PAYMENT
+========================================= */
 
 app.post(
   "/api/admin/payment/:paymentId/approve",
@@ -296,55 +543,103 @@ app.post(
     try {
 
       const paymentId =
-        req.params.paymentId;
+        String(
+          req.params.paymentId
+        );
 
-      const { data, error } = await supabase
-        .from("upi_payments")
-        .update({
-          status: "approved",
-          approved_at: new Date().toISOString(),
-          rejected_at: null
-        })
-        .eq("payment_id", paymentId)
-        .eq("status", "pending")
-        .select()
-        .maybeSingle();
+
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from("upi_payments")
+          .update({
+
+            status:
+              "approved",
+
+            approved_at:
+              new Date()
+                .toISOString(),
+
+            rejected_at:
+              null
+
+          })
+          .eq(
+            "payment_id",
+            paymentId
+          )
+          .eq(
+            "status",
+            "pending"
+          )
+          .select()
+          .maybeSingle();
+
 
       if (error) {
 
-        console.error(error);
+        console.error(
+          "Approve error:",
+          error
+        );
 
-        return res.status(500).json({
-          error: "Approval failed"
-        });
+        return res
+          .status(500)
+          .json({
+            error:
+              "Approval failed"
+          });
+
       }
+
 
       if (!data) {
-        return res.status(409).json({
-          error: "Payment already processed or not found"
-        });
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Payment already processed or not found"
+          });
+
       }
 
+
       return res.json({
+
         success: true,
-        payment: data
+
+        payment:
+          data
+
       });
 
-    } catch (err) {
 
-      console.error(err);
+    } catch (error) {
 
-      return res.status(500).json({
-        error: "Server error"
-      });
+      console.error(
+        "Approve server error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error: "Server error"
+        });
+
     }
+
   }
 );
 
 
-/* ================================
-   REJECT
-================================ */
+/* =========================================
+   REJECT PAYMENT
+========================================= */
 
 app.post(
   "/api/admin/payment/:paymentId/reject",
@@ -354,52 +649,112 @@ app.post(
     try {
 
       const paymentId =
-        req.params.paymentId;
+        String(
+          req.params.paymentId
+        );
 
-      const { data, error } = await supabase
-        .from("upi_payments")
-        .update({
-          status: "rejected",
-          rejected_at: new Date().toISOString(),
-          approved_at: null
-        })
-        .eq("payment_id", paymentId)
-        .eq("status", "pending")
-        .select()
-        .maybeSingle();
+
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from("upi_payments")
+          .update({
+
+            status:
+              "rejected",
+
+            rejected_at:
+              new Date()
+                .toISOString(),
+
+            approved_at:
+              null
+
+          })
+          .eq(
+            "payment_id",
+            paymentId
+          )
+          .eq(
+            "status",
+            "pending"
+          )
+          .select()
+          .maybeSingle();
+
 
       if (error) {
 
-        console.error(error);
+        console.error(
+          "Reject error:",
+          error
+        );
 
-        return res.status(500).json({
-          error: "Rejection failed"
-        });
+        return res
+          .status(500)
+          .json({
+            error:
+              "Rejection failed"
+          });
+
       }
+
 
       if (!data) {
-        return res.status(409).json({
-          error: "Payment already processed or not found"
-        });
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "Payment already processed or not found"
+          });
+
       }
 
+
       return res.json({
+
         success: true,
-        payment: data
+
+        payment:
+          data
+
       });
 
-    } catch (err) {
 
-      console.error(err);
+    } catch (error) {
 
-      return res.status(500).json({
-        error: "Server error"
-      });
+      console.error(
+        "Reject server error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          error: "Server error"
+        });
+
     }
+
   }
 );
 
 
-app.listen(PORT, () => {
-  console.log(`CEZOO payment server running on ${PORT}`);
-});
+/* =========================================
+   START SERVER
+========================================= */
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+
+    console.log(
+      `CEZOO payment server running on port ${PORT}`
+    );
+
+  }
+);
