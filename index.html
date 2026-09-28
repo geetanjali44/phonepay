@@ -378,7 +378,7 @@ async function startPayment(app){
       First open payment app.
     */
 
-    window.location.href = data.paymentUrl;
+    window.location.assign(data.paymentUrl);
 
   }
   catch(error){
