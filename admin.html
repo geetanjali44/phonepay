@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1"
+>
+
+<title>CEZOO Payments Admin</title>
+
+<style>
+
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  background:#f5f6f8;
+  font-family:Arial,sans-serif;
+  color:#171717;
+}
+
+header{
+  background:#fff;
+  border-bottom:1px solid #eee;
+  padding:18px 24px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  position:sticky;
+  top:0;
+}
+
+.logo{
+  font-size:22px;
+  font-weight:900;
+}
+
+.container{
+  max-width:1100px;
+  margin:auto;
+  padding:24px;
+}
+
+.login{
+  max-width:390px;
+  margin:80px auto;
+  background:#fff;
+  padding:25px;
+  border-radius:20px;
+  box-shadow:0 10px 30px rgba(0,0,0,.06);
+}
+
+input{
+  width:100%;
+  height:52px;
+  border:1px solid #ddd;
+  border-radius:12px;
+  padding:0 14px;
+  font-size:16px;
+}
+
+.login button{
+  width:100%;
+  height:52px;
+  margin-top:12px;
+  border:0;
+  border-radius:12px;
+  background:#111;
+  color:#fff;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.dashboard{
+  display:none;
+}
+
+.stats{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+  margin-bottom:22px;
+}
+
+.stat{
+  background:#fff;
+  padding:20px;
+  border-radius:16px;
+}
+
+.stat small{
+  color:#777;
+}
+
+.stat strong{
+  display:block;
+  font-size:27px;
+  margin-top:6px;
+}
+
+.payment{
+  background:#fff;
+  border-radius:18px;
+  padding:18px;
+  margin-bottom:12px;
+}
+
+.paymentTop{
+  display:flex;
+  justify-content:space-between;
+  gap:15px;
+}
+
+.amount{
+  font-size:24px;
+  font-weight:900;
+}
+
+.paymentId{
+  font-size:12px;
+  color:#777;
+  margin-top:6px;
+  word-break:break-all;
+}
+
+.details{
+  margin-top:14px;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+  font-size:13px;
+}
+
+.details small{
+  display:block;
+  color:#888;
+  margin-bottom:4px;
+}
+
+.status{
+  display:inline-flex;
+  padding:6px 10px;
+  border-radius:20px;
+  font-size:12px;
+  font-weight:800;
+}
+
+.pending{
+  background:#fff5d9;
+  color:#a16207;
+}
+
+.approved{
+  background:#e7f8ed;
+  color:#15803d;
+}
+
+.rejected{
+  background:#ffebeb;
+  color:#dc2626;
+}
+
+.actions{
+  display:flex;
+  gap:10px;
+  margin-top:16px;
+}
+
+.actions button{
+  flex:1;
+  height:45px;
+  border:0;
+  border-radius:11px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.approve{
+  background:#16a34a;
+  color:#fff;
+}
+
+.reject{
+  background:#fee2e2;
+  color:#dc2626;
+}
+
+.refresh{
+  border:0;
+  background:#111;
+  color:#fff;
+  border-radius:10px;
+  padding:10px 15px;
+  cursor:pointer;
+}
+
+@media(max-width:700px){
+
+  .stats{
+    grid-template-columns:1fr;
+  }
+
+  .details{
+    grid-template-columns:1fr;
+  }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+
+  <div class="logo">
+    CEZOO Payments
+  </div>
+
+  <button
+    class="refresh"
+    id="refreshBtn"
+    onclick="loadPayments()"
+    style="display:none"
+  >
+    Refresh
+  </button>
+
+</header>
+
+
+<div class="login" id="loginBox">
+
+  <h2>Admin Login</h2>
+
+  <input
+    type="password"
+    id="password"
+    placeholder="Admin password"
+  >
+
+  <button onclick="login()">
+    Continue
+  </button>
+
+  <p
+    id="loginError"
+    style="color:red;font-size:13px"
+  ></p>
+
+</div>
+
+
+<div
+  class="container dashboard"
+  id="dashboard"
+>
+
+  <div class="stats">
+
+    <div class="stat">
+      <small>Pending</small>
+      <strong id="pendingCount">0</strong>
+    </div>
+
+    <div class="stat">
+      <small>Approved</small>
+      <strong id="approvedCount">0</strong>
+    </div>
+
+    <div class="stat">
+      <small>Rejected</small>
+      <strong id="rejectedCount">0</strong>
+    </div>
+
+  </div>
+
+
+  <div id="payments"></div>
+
+</div>
+
+
+<script>
+
+const API =
+  "https://YOUR-RENDER-SERVICE.onrender.com";
+
+let adminPassword = "";
+
+
+/* LOGIN */
+
+async function login(){
+
+  adminPassword =
+    document
+      .getElementById("password")
+      .value;
+
+  if(!adminPassword){
+    return;
+  }
+
+  await loadPayments(true);
+}
+
+
+/* LOAD */
+
+async function loadPayments(isLogin=false){
+
+  try{
+
+    const response =
+      await fetch(
+        API + "/api/admin/payments",
+        {
+          headers:{
+            "x-admin-password":
+              adminPassword
+          },
+
+          cache:"no-store"
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if(!response.ok){
+
+      if(isLogin){
+
+        document.getElementById(
+          "loginError"
+        ).textContent =
+          "Incorrect password";
+      }
+
+      return;
+    }
+
+
+    document.getElementById(
+      "loginBox"
+    ).style.display =
+      "none";
+
+
+    document.getElementById(
+      "dashboard"
+    ).style.display =
+      "block";
+
+
+    document.getElementById(
+      "refreshBtn"
+    ).style.display =
+      "block";
+
+
+    renderPayments(
+      data.payments || []
+    );
+
+  }
+  catch(error){
+
+    console.error(error);
+  }
+}
+
+
+/* RENDER */
+
+function renderPayments(payments){
+
+  const pending =
+    payments.filter(
+      p => p.status === "pending"
+    ).length;
+
+  const approved =
+    payments.filter(
+      p => p.status === "approved"
+    ).length;
+
+  const rejected =
+    payments.filter(
+      p => p.status === "rejected"
+    ).length;
+
+
+  document.getElementById(
+    "pendingCount"
+  ).textContent = pending;
+
+  document.getElementById(
+    "approvedCount"
+  ).textContent = approved;
+
+  document.getElementById(
+    "rejectedCount"
+  ).textContent = rejected;
+
+
+  const container =
+    document.getElementById(
+      "payments"
+    );
+
+
+  if(!payments.length){
+
+    container.innerHTML =
+      "<p>No payments yet.</p>";
+
+    return;
+  }
+
+
+  container.innerHTML =
+    payments.map(p => {
+
+      const time =
+        new Date(
+          p.created_at
+        ).toLocaleString(
+          "en-IN",
+          {
+            timeZone:"Asia/Kolkata",
+            dateStyle:"medium",
+            timeStyle:"medium"
+          }
+        );
+
+
+      const buttons =
+        p.status === "pending"
+        ?
+        `
+        <div class="actions">
+
+          <button
+            class="approve"
+            onclick="updatePayment(
+              '${p.payment_id}',
+              'approve'
+            )"
+          >
+            Approve
+          </button>
+
+          <button
+            class="reject"
+            onclick="updatePayment(
+              '${p.payment_id}',
+              'reject'
+            )"
+          >
+            Reject
+          </button>
+
+        </div>
+        `
+        :
+        "";
+
+
+      return `
+
+        <div class="payment">
+
+          <div class="paymentTop">
+
+            <div>
+
+              <div class="amount">
+                ₹${Number(p.amount).toFixed(2)}
+              </div>
+
+              <div class="paymentId">
+                ${escapeHTML(p.payment_id)}
+              </div>
+
+            </div>
+
+
+            <div>
+
+              <span class="status ${p.status}">
+                ${p.status.toUpperCase()}
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div class="details">
+
+            <div>
+              <small>Payment App</small>
+              ${escapeHTML(p.payment_app)}
+            </div>
+
+            <div>
+              <small>Created</small>
+              ${time}
+            </div>
+
+            <div>
+              <small>Device Token</small>
+              ${escapeHTML(p.device_token)}
+            </div>
+
+          </div>
+
+          ${buttons}
+
+        </div>
+
+      `;
+
+    }).join("");
+}
+
+
+/* APPROVE / REJECT */
+
+async function updatePayment(
+  paymentId,
+  action
+){
+
+  const word =
+    action === "approve"
+    ? "approve"
+    : "reject";
+
+  if(
+    !confirm(
+      `Are you sure you want to ${word} this payment?`
+    )
+  ){
+    return;
+  }
+
+
+  try{
+
+    const response =
+      await fetch(
+        API +
+        "/api/admin/payment/" +
+        encodeURIComponent(paymentId) +
+        "/" +
+        action,
+        {
+          method:"POST",
+
+          headers:{
+            "x-admin-password":
+              adminPassword
+          }
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if(!response.ok){
+
+      alert(
+        data.error ||
+        "Unable to update payment"
+      );
+
+      return;
+    }
+
+
+    await loadPayments();
+
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    alert(
+      "Server connection failed"
+    );
+  }
+}
+
+
+function escapeHTML(value){
+
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+
+/*
+  Auto refresh dashboard
+*/
+
+setInterval(
+  () => {
+
+    if(adminPassword){
+      loadPayments();
+    }
+
+  },
+  5000
+);
+
+</script>
+
+</body>
+</html>

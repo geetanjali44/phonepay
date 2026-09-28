@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1,viewport-fit=cover"
+>
+
+<title>CEZOO Payment</title>
+
+<style>
+
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:#f5f6fa;
+  font-family:Arial,sans-serif;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:20px;
+  color:#161616;
+}
+
+.paymentCard{
+  width:100%;
+  max-width:400px;
+  background:#fff;
+  border-radius:24px;
+  padding:24px;
+  box-shadow:0 15px 45px rgba(0,0,0,.08);
+}
+
+.logo{
+  font-size:24px;
+  font-weight:900;
+  margin-bottom:28px;
+}
+
+.title{
+  font-size:23px;
+  font-weight:800;
+}
+
+.subtitle{
+  margin-top:7px;
+  color:#777;
+  font-size:14px;
+}
+
+.amountBox{
+  margin-top:25px;
+  border:1px solid #e4e4e4;
+  border-radius:16px;
+  display:flex;
+  align-items:center;
+  height:62px;
+  padding:0 18px;
+}
+
+.rupee{
+  font-size:25px;
+  font-weight:700;
+}
+
+.amountBox input{
+  border:0;
+  outline:0;
+  width:100%;
+  padding-left:8px;
+  font-size:24px;
+  font-weight:700;
+}
+
+.methodsTitle{
+  font-size:13px;
+  color:#777;
+  margin:24px 0 12px;
+}
+
+.payBtn{
+  width:100%;
+  height:58px;
+  border:0;
+  border-radius:16px;
+  margin-bottom:12px;
+  color:#fff;
+  font-size:16px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.phonepe{
+  background:#5f259f;
+}
+
+.paytm{
+  background:#00baf2;
+}
+
+.statusText{
+  min-height:20px;
+  text-align:center;
+  font-size:13px;
+  color:#777;
+  margin-top:5px;
+}
+
+
+/* POPUP */
+
+.overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.48);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  z-index:99999;
+}
+
+.overlay.show{
+  display:flex;
+}
+
+.popup{
+  width:100%;
+  max-width:340px;
+  background:white;
+  border-radius:24px;
+  padding:30px 22px;
+  text-align:center;
+}
+
+.icon{
+  width:72px;
+  height:72px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin:0 auto 18px;
+  font-size:35px;
+  font-weight:900;
+}
+
+.successIcon{
+  background:#e9f9ef;
+  color:#16a34a;
+}
+
+.rejectIcon{
+  background:#fff0f0;
+  color:#dc2626;
+}
+
+.pendingIcon{
+  background:#f1edff;
+  color:#5f259f;
+}
+
+.popup h2{
+  margin:0;
+  font-size:22px;
+}
+
+.popup p{
+  color:#777;
+  font-size:14px;
+  line-height:1.5;
+}
+
+.closeBtn{
+  border:0;
+  width:100%;
+  height:50px;
+  border-radius:13px;
+  background:#111;
+  color:#fff;
+  font-weight:800;
+  cursor:pointer;
+  margin-top:8px;
+}
+
+.spinner{
+  width:30px;
+  height:30px;
+  border:3px solid #ddd;
+  border-top-color:#5f259f;
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+
+@keyframes spin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="paymentCard">
+
+  <div class="logo">CEZOO</div>
+
+  <div class="title">
+    Make a payment
+  </div>
+
+  <div class="subtitle">
+    Secure UPI payment
+  </div>
+
+
+  <div class="amountBox">
+
+    <div class="rupee">₹</div>
+
+    <input
+      id="amount"
+      type="number"
+      inputmode="decimal"
+      placeholder="0"
+      min="1"
+    >
+
+  </div>
+
+
+  <div class="methodsTitle">
+    SELECT PAYMENT METHOD
+  </div>
+
+
+  <button
+    class="payBtn phonepe"
+    onclick="startPayment('phonepe')"
+  >
+    Pay with PhonePe
+  </button>
+
+
+  <button
+    class="payBtn paytm"
+    onclick="startPayment('paytm')"
+  >
+    Pay with Paytm
+  </button>
+
+
+  <div
+    class="statusText"
+    id="statusText"
+  ></div>
+
+</div>
+
+
+
+<div class="overlay" id="popupOverlay">
+
+  <div class="popup">
+
+    <div
+      class="icon pendingIcon"
+      id="popupIcon"
+    >
+      <div class="spinner"></div>
+    </div>
+
+    <h2 id="popupTitle">
+      Verifying Payment
+    </h2>
+
+    <p id="popupMessage">
+      Waiting for payment confirmation...
+    </p>
+
+    <button
+      class="closeBtn"
+      id="closeButton"
+      onclick="closePopup()"
+      style="display:none"
+    >
+      Done
+    </button>
+
+  </div>
+
+</div>
+
+
+<script>
+
+/*
+  ONLY Render URL goes here.
+  UPI ID / Supabase keys are NOT here.
+*/
+
+const API =
+  "https://phonepay-q8s5.onrender.com";
+
+
+let currentPaymentId = null;
+let currentDeviceToken = null;
+let pollTimer = null;
+
+
+/* ===========================
+   START PAYMENT
+=========================== */
+
+async function startPayment(app){
+
+  const amount =
+    Number(
+      document.getElementById("amount").value
+    );
+
+  if(!amount || amount < 1){
+
+    alert("Please enter valid amount");
+    return;
+  }
+
+  const status =
+    document.getElementById("statusText");
+
+  status.textContent =
+    "Preparing secure payment...";
+
+  try{
+
+    const response =
+      await fetch(
+        API + "/api/payment/create",
+        {
+          method:"POST",
+
+          headers:{
+            "Content-Type":"application/json"
+          },
+
+          body:JSON.stringify({
+            amount,
+            app
+          })
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if(!response.ok){
+
+      throw new Error(
+        data.error || "Payment unavailable"
+      );
+    }
+
+
+    currentPaymentId =
+      data.paymentId;
+
+    currentDeviceToken =
+      data.deviceToken;
+
+
+    /*
+      Save session so returning
+      from PhonePe still works.
+    */
+
+    sessionStorage.setItem(
+      "cezoo_payment_id",
+      currentPaymentId
+    );
+
+    sessionStorage.setItem(
+      "cezoo_payment_token",
+      currentDeviceToken
+    );
+
+
+    status.textContent =
+      "Opening payment app...";
+
+
+    /*
+      Start checking backend
+    */
+
+    startStatusPolling();
+
+
+    /*
+      OPEN UPI APP
+    */
+
+    window.location.href =
+      data.paymentUrl;
+
+
+  }
+  catch(error){
+
+    console.error(error);
+
+    status.textContent =
+      error.message ||
+      "Unable to start payment";
+  }
+}
+
+
+/* ===========================
+   CHECK STATUS
+=========================== */
+
+async function checkPaymentStatus(){
+
+  if(
+    !currentPaymentId ||
+    !currentDeviceToken
+  ){
+    return;
+  }
+
+  try{
+
+    const response =
+      await fetch(
+        API +
+        "/api/payment/status/" +
+        encodeURIComponent(currentPaymentId) +
+        "?token=" +
+        encodeURIComponent(currentDeviceToken),
+        {
+          cache:"no-store"
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if(!response.ok){
+      return;
+    }
+
+
+    const payment =
+      data.payment;
+
+
+    if(payment.status === "approved"){
+
+      stopPolling();
+
+      showSuccess(
+        payment.amount,
+        payment.payment_id
+      );
+
+      clearPaymentSession();
+    }
+
+
+    else if(payment.status === "rejected"){
+
+      stopPolling();
+
+      showRejected(
+        payment.payment_id
+      );
+
+      clearPaymentSession();
+    }
+
+
+    else{
+
+      showPending();
+    }
+
+  }
+  catch(error){
+
+    console.log(
+      "Status check failed",
+      error
+    );
+  }
+}
+
+
+/* ===========================
+   POLLING
+=========================== */
+
+function startStatusPolling(){
+
+  stopPolling();
+
+  checkPaymentStatus();
+
+  pollTimer =
+    setInterval(
+      checkPaymentStatus,
+      2500
+    );
+}
+
+
+function stopPolling(){
+
+  if(pollTimer){
+
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+
+/* ===========================
+   POPUPS
+=========================== */
+
+function showPending(){
+
+  document
+    .getElementById("popupOverlay")
+    .classList.add("show");
+
+  document.getElementById(
+    "popupIcon"
+  ).className =
+    "icon pendingIcon";
+
+  document.getElementById(
+    "popupIcon"
+  ).innerHTML =
+    '<div class="spinner"></div>';
+
+  document.getElementById(
+    "popupTitle"
+  ).textContent =
+    "Verifying Payment";
+
+  document.getElementById(
+    "popupMessage"
+  ).textContent =
+    "Waiting for payment confirmation...";
+
+  document.getElementById(
+    "closeButton"
+  ).style.display =
+    "none";
+}
+
+
+function showSuccess(amount,id){
+
+  document
+    .getElementById("popupOverlay")
+    .classList.add("show");
+
+  const icon =
+    document.getElementById("popupIcon");
+
+  icon.className =
+    "icon successIcon";
+
+  icon.innerHTML =
+    "✓";
+
+
+  document.getElementById(
+    "popupTitle"
+  ).textContent =
+    "Payment Successful";
+
+
+  document.getElementById(
+    "popupMessage"
+  ).innerHTML =
+    "₹" +
+    Number(amount).toFixed(2) +
+    " payment approved.<br><br>" +
+    "<small>" + id + "</small>";
+
+
+  document.getElementById(
+    "closeButton"
+  ).style.display =
+    "block";
+}
+
+
+function showRejected(id){
+
+  document
+    .getElementById("popupOverlay")
+    .classList.add("show");
+
+
+  const icon =
+    document.getElementById("popupIcon");
+
+  icon.className =
+    "icon rejectIcon";
+
+  icon.innerHTML =
+    "×";
+
+
+  document.getElementById(
+    "popupTitle"
+  ).textContent =
+    "Payment Rejected";
+
+
+  document.getElementById(
+    "popupMessage"
+  ).innerHTML =
+    "This payment was not approved.<br><br>" +
+    "<small>" + id + "</small>";
+
+
+  document.getElementById(
+    "closeButton"
+  ).style.display =
+    "block";
+}
+
+
+function closePopup(){
+
+  document
+    .getElementById("popupOverlay")
+    .classList.remove("show");
+}
+
+
+function clearPaymentSession(){
+
+  sessionStorage.removeItem(
+    "cezoo_payment_id"
+  );
+
+  sessionStorage.removeItem(
+    "cezoo_payment_token"
+  );
+}
+
+
+/* ===========================
+   RESTORE AFTER RETURN
+=========================== */
+
+function restorePayment(){
+
+  const id =
+    sessionStorage.getItem(
+      "cezoo_payment_id"
+    );
+
+  const token =
+    sessionStorage.getItem(
+      "cezoo_payment_token"
+    );
+
+
+  if(id && token){
+
+    currentPaymentId = id;
+    currentDeviceToken = token;
+
+    showPending();
+
+    startStatusPolling();
+  }
+}
+
+
+window.addEventListener(
+  "pageshow",
+  restorePayment
+);
+
+window.addEventListener(
+  "focus",
+  () => {
+
+    if(currentPaymentId){
+      checkPaymentStatus();
+    }
+
+  }
+);
+
+</script>
+
+</body>
+</html>
