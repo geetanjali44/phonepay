@@ -1,9 +1,13 @@
 {
   "name": "cezoo-payment-server",
   "version": "1.0.0",
+  "description": "CEZOO UPI Payment Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
