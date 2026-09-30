@@ -89,6 +89,121 @@ app.get("/", (req, res) => {
 
 
 /* =========================================
+   SUPABASE DEBUG
+========================================= */
+
+app.get(
+  "/debug/supabase",
+  async (req, res) => {
+
+    try {
+
+      let projectHost = "UNKNOWN";
+
+      try {
+
+        projectHost =
+          new URL(
+            SUPABASE_URL
+          ).hostname;
+
+      } catch (error) {
+
+        projectHost =
+          "INVALID_SUPABASE_URL";
+
+      }
+
+
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from("upi_payments")
+          .select("payment_id")
+          .limit(1);
+
+
+      if (error) {
+
+        return res.json({
+
+          success: false,
+
+          projectHost:
+            projectHost,
+
+          table:
+            "public.upi_payments",
+
+          tableAccessible:
+            false,
+
+          error: {
+            code:
+              error.code || null,
+
+            message:
+              error.message || null,
+
+            details:
+              error.details || null,
+
+            hint:
+              error.hint || null
+          }
+
+        });
+
+      }
+
+
+      return res.json({
+
+        success: true,
+
+        projectHost:
+          projectHost,
+
+        table:
+          "public.upi_payments",
+
+        tableAccessible:
+          true,
+
+        rows:
+          data || []
+
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Supabase debug error:",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+
+          success: false,
+
+          error:
+            error.message ||
+            "Debug failed"
+
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================
    CREATE PAYMENT
 ========================================= */
 
@@ -153,13 +268,13 @@ app.post(
           .toUpperCase();
 
 
-      /* DEVICE / PAYMENT SESSION TOKEN */
+      /* DEVICE TOKEN */
 
       const deviceToken =
         crypto.randomUUID();
 
 
-      /* SAVE TO DATABASE */
+      /* SAVE PAYMENT */
 
       const {
         error: insertError
@@ -196,21 +311,21 @@ app.post(
         return res
           .status(500)
           .json({
+
             error:
-              "Unable to create payment"
+              "Unable to create payment",
+
+            code:
+              insertError.code || null
+
           });
 
       }
 
 
-      /* =================================
+      /* =========================================
          CREATE STANDARD UPI URI
-
-         UPI ID stays in Render ENV.
-         Browser receives payment URI only
-         after payment is created.
-      ================================= */
-
+      ========================================= */
 
       const params =
         new URLSearchParams();
@@ -247,18 +362,6 @@ app.post(
         "INR"
       );
 
-
-      /*
-        IMPORTANT:
-
-        Do NOT force:
-        package=com.phonepe.app
-
-        Send standard UPI URI.
-
-        Android installed UPI handler
-        can open it.
-      */
 
       const paymentUrl =
         "upi://pay?" +
@@ -342,8 +445,7 @@ app.get(
       } =
         await supabase
           .from("upi_payments")
-          .select(
-            `
+          .select(`
             payment_id,
             amount,
             payment_app,
@@ -351,8 +453,7 @@ app.get(
             created_at,
             approved_at,
             rejected_at
-            `
-          )
+          `)
           .eq(
             "payment_id",
             paymentId
